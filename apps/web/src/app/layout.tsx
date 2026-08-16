@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Manrope } from "next/font/google";
+import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { AppProviders } from "@/providers/app-providers";
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
   description: "Customer service request tracking workspace",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
