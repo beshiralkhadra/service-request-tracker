@@ -1,0 +1,82 @@
+name: service-request-tracker
+
+x-api-environment: &api-environment
+  DATABASE_URL: file:/data/service-request-tracker.db
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  volume-init:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: service-request-tracker-api:local
+    user: "0:0"
+    command: ["sh", "-c", "chown -R node:node /data"]
+    restart: "no"
+    volumes:
+      - service-request-data:/data
+
+  migrate:
+    image: service-request-tracker-api:local
+    command: ["./node_modules/.bin/prisma", "migrate", "deploy"]
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *api-environment
+    restart: "no"
+    volumes:
+      - service-request-data:/data
+
+  seed:
+    image: service-request-tracker-api:local
+    command: ["./node_modules/.bin/tsx", "prisma/seed.ts"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *api-environment
+      SEED_AGENT_EMAIL: ${SEED_AGENT_EMAIL:-agent@example.com}
+      SEED_AGENT_NAME: ${SEED_AGENT_NAME:-Support Agent}
+      SEED_AGENT_PASSWORD: ${SEED_AGENT_PASSWORD:?Set SEED_AGENT_PASSWORD in .env}
+    restart: "no"
+    volumes:
+      - service-request-data:/data
+
+  api:
+    image: service-request-tracker-api:local
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      <<: *api-environment
+      API_PORT: 4000
+      CORS_ORIGIN: http://localhost:${WEB_PORT:-3000}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in .env}
+      REFRESH_TOKEN_PEPPER: ${REFRESH_TOKEN_PEPPER:?Set REFRESH_TOKEN_PEPPER in .env}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      PASSWORD_HASH_ROUNDS: ${PASSWORD_HASH_ROUNDS:-12}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    restart: unless-stopped
+    volumes:
+      - service-request-data:/data
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:4000
+    image: service-request-tracker-web:local
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    restart: unless-stopped
+
+volumes:
+  service-request-data:
